@@ -23,13 +23,13 @@ def evaluate_safety_risk(environment_data: Dict[str, Any]) -> Tuple[bool, str]:
                                     and a reason message.
     """
     
-    # 1. Critical Hazard Check (e.g. Broken stairs, loose dog, blocked path)
-    critical_hazards = ["broken_stairs", "loose_pet", "unsecured_ladder", "trip_wire"]
+    # 1. Critical Hazard Check (e.g. Broken stairs, loose dog, blocked path, forklifts)
+    critical_hazards = ["broken_stairs", "loose_pet", "unsecured_ladder", "trip_wire", "forklift_proximity", "forklift_reversing"]
     detected_hazards = environment_data.get("hazards_detected", [])
     
     for hazard in detected_hazards:
         if hazard in critical_hazards:
-            alert_msg = f"STOP & ASSESS: Critical hazard detected -> {hazard.replace('_', ' ').title()}."
+            alert_msg = f"STOP & ASSESS: Critical hazard detected -> {str(hazard).replace('_', ' ').title()}."
             logging.warning(alert_msg)
             return True, alert_msg
 
