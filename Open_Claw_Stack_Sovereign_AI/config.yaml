@@ -1,0 +1,43 @@
+# Open Claw Stack — System Configuration
+
+llm:
+  primary: gemini
+  model: gemini-2.0-flash
+  fallback: rule_based
+  temperature: 0.3
+  max_tokens: 2048
+
+dashboard:
+  port: 8765
+  host: localhost
+  auto_open: true
+
+agents:
+  max_concurrent: 5
+  timeout_seconds: 30
+  cgroup:
+    mem_max_mb: 1024
+    cpu_max_percent: 50
+    pids_max: 64
+
+execwall:
+  audit_log: true
+  strict_mode: false   # false = deny if not in allowlist but no policy violation error
+  log_file: execwall_audit.log
+
+security:
+  shadow_ai_processes:
+    - copilot
+    - openai
+    - claude
+    - gemini-app
+    - localai
+    - lmstudio
+    - ollama
+    - text-generation-webui
+  suspicious_ports:
+    - 11434   # Ollama
+    - 5000    # Generic AI server
+    - 7860    # Gradio
+    - 8080    # Generic web
+    - 8888    # Jupyter (unmanaged)
