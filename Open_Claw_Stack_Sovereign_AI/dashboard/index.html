@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open Claw Stack — Sovereign AI Command Center</title>
+  <meta name="description" content="Real-time dashboard for the Open Claw Stack sovereign AI multi-agent system" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- ── HEADER ───────────────────────────────── -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">OPEN CLAW STACK</span>
+        <span class="logo-badge">SOVEREIGN AI</span>
+      </div>
+      <div class="system-status">
+        <span class="status-dot" id="conn-dot"></span>
+        <span class="status-label" id="conn-label">Connecting...</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="metric-chip" id="chip-phase">PHASE: IDLE</div>
+      <div class="metric-chip" id="chip-backend">LLM: —</div>
+      <button class="btn-reset" id="btn-reset" onclick="resetSystem()">↺ Reset</button>
+    </div>
+  </header>
+
+  <!-- ── TASK BAR ──────────────────────────────── -->
+  <div class="taskbar">
+    <div class="taskbar-inner">
+      <span class="taskbar-icon">🎯</span>
+      <input
+        id="task-input"
+        class="task-input"
+        type="text"
+        placeholder="Enter task for the Super Team... e.g., 'The network is slow — check for a security breach'"
+        autocomplete="off"
+      />
+      <button id="btn-run" class="btn-run" onclick="submitTask()">
+        <span id="btn-run-text">▶ Run Task</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── MAIN GRID ─────────────────────────────── -->
+  <main class="main-grid">
+
+    <!-- Left Column: PRA Loop + Agent Cards -->
+    <div class="left-col">
+
+      <!-- PRA LOOP VISUALIZATION -->
+      <section class="panel pra-panel">
+        <h2 class="panel-title">⚙️ PRA Loop — Perception → Reasoning → Action</h2>
+        <div class="pra-steps">
+          <div class="pra-step" id="pra-perception">
+            <div class="pra-icon">👁️</div>
+            <div class="pra-label">PERCEPTION</div>
+            <div class="pra-desc">Task parsing & signal gathering</div>
+          </div>
+          <div class="pra-arrow">→</div>
+          <div class="pra-step" id="pra-reasoning">
+            <div class="pra-icon">🧠</div>
+            <div class="pra-label">REASONING</div>
+            <div class="pra-desc">Gemini routing & analysis</div>
+          </div>
+          <div class="pra-arrow">→</div>
+          <div class="pra-step" id="pra-action">
+            <div class="pra-icon">⚡</div>
+            <div class="pra-label">ACTION</div>
+            <div class="pra-desc">Agent execution via Execwall</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- AGENT CARDS GRID -->
+      <section class="agent-grid">
+        <!-- Supervisor -->
+        <div class="agent-card" id="card-supervisor">
+          <div class="agent-header">
+            <span class="agent-icon">🧭</span>
+            <div class="agent-info">
+              <div class="agent-name">SUPERVISOR</div>
+              <div class="agent-role">Orchestration & Routing</div>
+            </div>
+            <div class="agent-status-badge" id="badge-supervisor">IDLE</div>
+          </div>
+          <div class="agent-output" id="out-supervisor">Awaiting task...</div>
+          <div class="agent-metrics" id="met-supervisor"></div>
+          <div class="agent-tools" id="tools-supervisor"></div>
+        </div>
+
+        <!-- Security Auditor -->
+        <div class="agent-card" id="card-security_auditor">
+          <div class="agent-header">
+            <span class="agent-icon">🔐</span>
+            <div class="agent-info">
+              <div class="agent-name">SECURITY AUDITOR</div>
+              <div class="agent-role">PHASR · Shadow AI · Ports</div>
+            </div>
+            <div class="agent-status-badge" id="badge-security_auditor">IDLE</div>
+          </div>
+          <div class="agent-output" id="out-security_auditor">Awaiting task...</div>
+          <div class="agent-metrics" id="met-security_auditor"></div>
+          <div class="agent-tools" id="tools-security_auditor"></div>
+        </div>
+
+        <!-- Network Engineer -->
+        <div class="agent-card" id="card-network_engineer">
+          <div class="agent-header">
+            <span class="agent-icon">🌐</span>
+            <div class="agent-info">
+              <div class="agent-name">NETWORK ENGINEER</div>
+              <div class="agent-role">Ping · DNS · Traceroute</div>
+            </div>
+            <div class="agent-status-badge" id="badge-network_engineer">IDLE</div>
+          </div>
+          <div class="agent-output" id="out-network_engineer">Awaiting task...</div>
+          <div class="agent-metrics" id="met-network_engineer"></div>
+          <div class="agent-tools" id="tools-network_engineer"></div>
+        </div>
+
+        <!-- SysAdmin -->
+        <div class="agent-card" id="card-sysadmin">
+          <div class="agent-header">
+            <span class="agent-icon">🖥️</span>
+            <div class="agent-info">
+              <div class="agent-name">SYSADMIN</div>
+              <div class="agent-role">CPU · RAM · Disk · Services</div>
+            </div>
+            <div class="agent-status-badge" id="badge-sysadmin">IDLE</div>
+          </div>
+          <div class="agent-output" id="out-sysadmin">Awaiting task...</div>
+          <div class="agent-metrics" id="met-sysadmin"></div>
+          <div class="agent-tools" id="tools-sysadmin"></div>
+        </div>
+
+        <!-- Product Lead -->
+        <div class="agent-card agent-card--wide" id="card-product_lead">
+          <div class="agent-header">
+            <span class="agent-icon">📝</span>
+            <div class="agent-info">
+              <div class="agent-name">PRODUCT LEAD</div>
+              <div class="agent-role">Plain-English Synthesis · Gemini NLP</div>
+            </div>
+            <div class="agent-status-badge" id="badge-product_lead">IDLE</div>
+          </div>
+          <div class="agent-output" id="out-product_lead">Awaiting task completion...</div>
+          <div class="agent-metrics" id="met-product_lead"></div>
+          <div class="agent-tools" id="tools-product_lead"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Column: Activity Feed + Incidents -->
+    <div class="right-col">
+
+      <!-- ACTIVITY FEED -->
+      <section class="panel feed-panel">
+        <h2 class="panel-title">
+          📡 Live Activity Feed
+          <span class="feed-count" id="feed-count">0 events</span>
+        </h2>
+        <div class="feed-list" id="feed-list">
+          <div class="feed-item feed-item--system">
+            <span class="feed-time">—</span>
+            <span class="feed-content">Waiting for tasks...</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- EXECWALL AUDIT -->
+      <section class="panel execwall-panel">
+        <h2 class="panel-title">🛡️ Execwall Audit Log</h2>
+        <div class="execwall-stats" id="execwall-stats">
+          <div class="stat-pill stat-pill--allow">✅ Allowed: <span id="ew-allow">0</span></div>
+          <div class="stat-pill stat-pill--deny">🚫 Blocked: <span id="ew-deny">0</span></div>
+        </div>
+        <div class="execwall-log" id="execwall-log"></div>
+      </section>
+
+      <!-- SECURITY INCIDENTS -->
+      <section class="panel incidents-panel">
+        <h2 class="panel-title">🚨 Incident Log</h2>
+        <div class="incidents-list" id="incidents-list">
+          <div class="no-incidents">✅ No incidents recorded</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ── FINAL REPORT PANEL ────────────────────── -->
+  <section class="report-panel" id="report-panel">
+    <div class="report-header">
+      <h2 class="panel-title">📋 Executive Report</h2>
+      <div class="report-actions">
+        <button class="btn-copy" onclick="copyReport()">📋 Copy</button>
+        <button class="btn-clear" onclick="clearReport()">✕ Clear</button>
+      </div>
+    </div>
+    <div class="report-body" id="report-body">
+      <div class="report-placeholder">Complete a task to see the executive report here...</div>
+    </div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
