@@ -1,0 +1,67 @@
+# Open Claw Stack — Execwall Command Policy
+# PHASR (Proactive Hardening and Attack Surface Reduction)
+# Format: allow list checked AFTER deny list. Deny overrides all.
+
+rules:
+  deny:
+    # PHASR.Killall — prevent disabling monitoring or sessions
+    - pattern: "^killall"
+    - pattern: "kill\\s+-9\\s+1$"
+
+    # PHASR.Base64.Decode — block deobfuscation of payloads in memory
+    - pattern: "^base64\\s+(--decode|-d)"
+    - pattern: "echo.+\\|\\s*base64\\s+-d"
+
+    # PHASR.Curl.Silent — block unauthorized silent external downloads
+    - pattern: "curl.+(--silent|-s)\\s+https?://(?!192\\.168\\.|10\\.0\\.)"
+    - pattern: "wget.+(-q|--quiet)\\s+https?://(?!192\\.168\\.|10\\.0\\.)"
+
+    # PHASR.Xattr — block clearing file integrity attributes
+    - pattern: "xattr\\s+-d\\s+com\\.apple\\.quarantine"
+
+    # Destructive operations — deny unconditionally
+    - pattern: "rm\\s+-rf\\s+/"
+    - pattern: "rm\\s+-rf\\s+~"
+    - pattern: "mkfs\\."
+    - pattern: "dd\\s+if=/dev/zero"
+    - pattern: "chmod\\s+777\\s+/"
+    - pattern: ":.*\\(\\).*\\{.*:.*\\|.*:.*\\}.*;"  # Fork bomb detection
+
+  allow:
+    # Network diagnostics
+    - pattern: "^ping"
+    - pattern: "^nslookup"
+    - pattern: "^nmap\\s+(-sn|-sP|--top-ports)"
+    - pattern: "^tracert"
+    - pattern: "^traceroute"
+    - pattern: "^netstat"
+    - pattern: "^ss\\s"
+
+    # System configuration views
+    - pattern: "^ipconfig"
+    - pattern: "^ip\\s+(addr|route|link|neigh)"
+    - pattern: "^ifconfig"
+
+    # Process inspection (read-only)
+    - pattern: "^tasklist"
+    - pattern: "^ps\\s+(aux|-ef)"
+    - pattern: "^top\\s+-b"
+    - pattern: "^htop"
+
+    # Disk and filesystem (read-only)
+    - pattern: "^df\\s"
+    - pattern: "^du\\s"
+    - pattern: "^dir\\s"
+    - pattern: "^ls\\s"
+
+    # Windows Management Instrumentation (read-only)
+    - pattern: "^wmic\\s+(cpu|os|memorychip|diskdrive)\\s+get"
+
+    # Service status inspection (read-only)
+    - pattern: "^systemctl\\s+(status|list-units|is-active)"
+    - pattern: "^sc\\s+query"
+    - pattern: "^net\\s+start$"
+
+    # Free memory
+    - pattern: "^free\\s"
+    - pattern: "^cat\\s+/proc/(meminfo|cpuinfo|version)"
