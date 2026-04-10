@@ -1,7 +1,7 @@
 """
 Open Claw Stack — Network Engineer Agent
 =========================================
-Specialist agent for connectivity analysis.
+Specialist agent for connectivity analysis and port security posture.
 
 Tools:
   - ping          — latency and packet loss
@@ -9,8 +9,7 @@ Tools:
   - nslookup      — DNS resolution
   - ipconfig/ip   — interface configuration
   - netstat       — active connections
-
-Produces a structured connectivity health report.
+  - nmap          — port scan for unauthorized services and Shadow AI detection
 """
 import logging
 import platform
@@ -97,26 +96,43 @@ class NetworkEngineerAgent:
             # 4. Active connections (netstat)
             conn_summary = self._get_connections()
             results["connections"] = conn_summary
-            tool_log.append("📊 Active connection scan")
+            tool_log.append("Active connection scan (netstat)")
 
-            # 5. Score & report
+            # 5. nmap port scan (Shadow AI + unauthorized service detection)
+            self.state.update_agent(
+                "network_engineer", AgentStatus.ACTING,
+                "nmap: scanning localhost for unauthorized services...",
+            )
+            nmap_result = self._nmap_scan()
+            results["nmap"] = nmap_result
+            tool_log.append(f"nmap: {nmap_result.get('status','?')} — {nmap_result.get('open_ports',0)} open ports")
+
+            # Shadow AI ports flagged by nmap
+            for alert in nmap_result.get("shadow_ai_ports", []):
+                self.state.add_incident({
+                    "type":   "SHADOW_AI_PORT_NMAP",
+                    "agent":  "network_engineer",
+                    "detail": alert,
+                })
+
+            # 6. Score & report
             score, label = self._health_score(ping_results, dns_results)
             results["health_score"] = score
             results["health_label"] = label
 
             self.state.update_agent(
                 "network_engineer", AgentStatus.DONE,
-                f"✅ Analysis complete — Network Health: {label} ({score}/100)",
+                f"Analysis complete — Network Health: {label} ({score}/100)",
                 metrics={
                     "health_score": score,
                     "health_label": label,
                     "dns_success":  sum(1 for v in dns_results.values() if v["resolved"]),
                     "interfaces":   iface_info[:80],
+                    "nmap_open_ports": results.get("nmap", {}).get("open_ports", "?"),
                     "tool_calls":   len(tool_log),
                 },
             )
 
-            # State: tool calls
             self.state.agents["network_engineer"].tool_calls = [
                 {"tool": t} for t in tool_log
             ]
@@ -188,6 +204,80 @@ class NetworkEngineerAgent:
         except PolicyViolationError as e:
             return f"Blocked: {e}"
 
+    # Shadow AI port signatures (same ports Execwall PHASR monitors)
+    _SHADOW_AI_PORTS = {
+        11434: "Ollama (local LLM runtime)",
+        8080:  "LM Studio / generic AI server",
+        8888:  "Jupyter Notebook (unauthenticated notebook server)",
+        7860:  "Gradio (ML demo app)",
+        5000:  "Flask / ML inference server",
+        3000:  "Generic dev server (potential LLM UI)",
+        4891:  "GPT4All",
+        1234:  "LM Studio API",
+    }
+
+    def _nmap_scan(self, target: str = "localhost") -> dict:
+        """
+        Run nmap against localhost to identify open ports.
+        Flags any ports matching known Shadow AI or unauthorized services.
+        Falls back to netstat-based port parsing if nmap is not installed.
+        """
+        # Try nmap first
+        nmap_cmd = f"nmap -sT -p 1-65535 --open -T4 {target}" if not IS_WIN else f"nmap -sT -p 1-10000 --open {target}"
+        try:
+            stdout, stderr, rc = self.execwall.execute(nmap_cmd, "network_engineer", timeout=60)
+            if rc == 0 and stdout:
+                return self._parse_nmap_output(stdout)
+        except PolicyViolationError:
+            logger.info("NetworkAgent: nmap blocked by Execwall — using netstat fallback")
+        except Exception as exc:
+            logger.info(f"NetworkAgent: nmap unavailable ({exc}) — using netstat fallback")
+
+        # Fallback: parse open ports from netstat
+        return self._nmap_via_netstat()
+
+    def _parse_nmap_output(self, output: str) -> dict:
+        """Parse nmap text output into structured results."""
+        open_ports = []
+        for line in output.splitlines():
+            m = re.match(r"(\d+)/tcp\s+(open)\s+(\S+)", line)
+            if m:
+                port, state, service = int(m.group(1)), m.group(2), m.group(3)
+                shadow_label = self._SHADOW_AI_PORTS.get(port)
+                open_ports.append({
+                    "port": port, "state": state, "service": service,
+                    "shadow_ai": shadow_label,
+                })
+        shadow = [f"Port {p['port']} ({p['shadow_ai']})" for p in open_ports if p.get("shadow_ai")]
+        return {
+            "status":          "nmap",
+            "open_ports":      len(open_ports),
+            "ports":           open_ports[:30],
+            "shadow_ai_ports": shadow,
+        }
+
+    def _nmap_via_netstat(self) -> dict:
+        """Extract open listening ports from netstat as nmap fallback."""
+        try:
+            cmd = "netstat -ano" if IS_WIN else "ss -tlnp"
+            stdout, _, _ = self.execwall.execute(cmd, "network_engineer", timeout=15)
+            open_ports = []
+            for line in stdout.splitlines():
+                m = re.search(r"[:\s](\d{2,5})\s.*LISTEN", line)
+                if m:
+                    port = int(m.group(1))
+                    shadow_label = self._SHADOW_AI_PORTS.get(port)
+                    open_ports.append({"port": port, "state": "open", "service": "?", "shadow_ai": shadow_label})
+            shadow = [f"Port {p['port']} ({p['shadow_ai']})" for p in open_ports if p.get("shadow_ai")]
+            return {
+                "status":          "netstat-fallback",
+                "open_ports":      len(open_ports),
+                "ports":           open_ports[:30],
+                "shadow_ai_ports": shadow,
+            }
+        except Exception:
+            return {"status": "unavailable", "open_ports": 0, "ports": [], "shadow_ai_ports": []}
+
     # ──────────────────────────────────────────────
     # Scoring & Report
     # ──────────────────────────────────────────────
@@ -214,20 +304,27 @@ class NetworkEngineerAgent:
         score  = results.get("health_score", 0)
         label  = results.get("health_label", "UNKNOWN")
         conns  = results.get("connections", "")
+        nmap   = results.get("nmap", {})
 
         ping_rows = "\n".join(
-            f"  • {name:30s} {d['ip']:15s}  {d['latency_ms']:>7.1f}ms  {d['loss_pct']:>5.1f}% loss"
+            f"  {name:30s} {d['ip']:15s}  {d['latency_ms']:>7.1f}ms  {d['loss_pct']:>5.1f}% loss"
             for name, d in ping.items()
         )
         dns_rows = "\n".join(
-            f"  • {host:20s}  {'✓ ' + ip if ip else '✗ FAILED':20s}  {ms:.0f}ms"
+            f"  {host:20s}  {'OK ' + ip if ip else 'FAILED':20s}  {ms:.0f}ms"
             for host, (ip, ms) in (
                 (h, (v["resolved"], v["response_ms"])) for h, v in dns.items()
             )
         )
         listen_count = conns.count("LISTEN") if conns else 0
 
-        return f"""## 🌐 Network Engineer Report
+        nmap_ports = nmap.get("open_ports", "?")
+        nmap_status = nmap.get("status", "?")
+        shadow_lines = "\n".join(
+            f"  SHADOW AI PORT DETECTED: {s}" for s in nmap.get("shadow_ai_ports", [])
+        ) or "  No suspicious ports detected"
+
+        return f"""## Network Engineer Report
 
 **Task**: {task or "General connectivity analysis"}
 **Overall Score**: {score}/100  {label}
@@ -238,10 +335,13 @@ class NetworkEngineerAgent:
 ### DNS Resolution
 {dns_rows or "  (no results)"}
 
+### Port Scan (nmap / {nmap_status})
+  Open ports: {nmap_ports}
+{shadow_lines}
+
 ### Active Connections
-  • LISTEN ports detected: {listen_count}
-  • (Full netstat available in raw data)
+  LISTEN ports detected: {listen_count}
 
 ### Recommendation
-{"✅ Network operating normally." if score >= 80 else "⚠️ Network degradation detected. Check router/gateway and ISP status." if score >= 50 else "🚨 Critical network failure. Check physical connection and DNS settings."}
+{"Network operating normally." if score >= 80 else "Network degradation detected. Check router/gateway and ISP status." if score >= 50 else "Critical network failure. Check physical connection and DNS settings."}
 """
