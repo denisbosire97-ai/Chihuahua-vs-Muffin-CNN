@@ -31,7 +31,7 @@ rules:
     # Network diagnostics
     - pattern: "^ping"
     - pattern: "^nslookup"
-    - pattern: "^nmap\\s+(-sn|-sP|--top-ports)"
+    - pattern: "^nmap\\s"           # Full nmap scans for network/shadow AI audit
     - pattern: "^tracert"
     - pattern: "^traceroute"
     - pattern: "^netstat"
@@ -65,3 +65,24 @@ rules:
     # Free memory
     - pattern: "^free\\s"
     - pattern: "^cat\\s+/proc/(meminfo|cpuinfo|version)"
+
+    # GPU / Thermal monitoring
+    - pattern: "^nvidia-smi"
+
+    # Package management (read-only audit)
+    - pattern: "^pip\\s+(list|show|check)"
+    - pattern: "^pip-audit"
+    - pattern: "^winget\\s+(upgrade|list)"
+
+    # Windows Firewall audit (read-only)
+    - pattern: "^netsh\\s+advfirewall"
+
+    # Windows Event Log (read-only via PowerShell)
+    - pattern: "^powershell\\s+-Command\\s+\"Get-(WinEvent|EventLog)"
+
+    # journalctl log reading (Linux)
+    - pattern: "^journalctl\\s+-p"
+    - pattern: "^grep\\s+-i\\s+'(failed|invalid|authentication)'"
+
+    # GPU diagnostic CLI
+    - pattern: "^gpustat"
