@@ -1,18 +1,22 @@
 """
-Open Claw Stack — Main Entry Point
-=====================================
-Bootstraps the entire sovereign AI stack:
+Open Claw Stack v2.0 — Main Entry Point
+=========================================
+Bootstraps the full sovereign AI stack:
   1. Loads config and policy
   2. Initializes SharedState, Execwall, LLM client
-  3. Instantiates all 5 agents
-  4. Starts the FastAPI/WebSocket server in a background thread
-  5. Opens the dashboard in the browser
-  6. Accepts CLI task input
+  3. Instantiates all 9 agents
+  4. Initializes RAG memory (ChromaDB + Gemini embeddings)
+  5. Initializes A2A Message Bus
+  6. Starts the Autonomous Scheduler
+  7. Starts the FastAPI/WebSocket server in a background thread
+  8. Opens the dashboard in the browser
+  9. Accepts CLI task input
 
 Usage:
   python main.py                          # Interactive mode (opens dashboard)
   python main.py --task "Check my system" # One-shot mode
   python main.py --no-browser             # Skip auto-opening browser
+  python main.py --no-schedule            # Disable autonomous scheduling
 """
 import argparse
 import logging
@@ -42,12 +46,29 @@ from core.execwall  import Execwall
 from core.sandbox   import Cgroup
 
 # ── Agent imports ────────────────────────────────
-from inference.llm_client         import LLMClient
-from agents.supervisor            import SupervisorAgent
-from agents.security_auditor      import SecurityAuditorAgent
-from agents.network_engineer      import NetworkEngineerAgent
-from agents.sysadmin              import SysAdminAgent
-from agents.product_lead          import ProductLeadAgent
+from inference.llm_client             import LLMClient
+from agents.supervisor                import SupervisorAgent
+from agents.security_auditor          import SecurityAuditorAgent
+from agents.network_engineer          import NetworkEngineerAgent
+from agents.sysadmin                  import SysAdminAgent
+from agents.product_lead              import ProductLeadAgent
+from agents.gpu_thermal               import GPUThermalAgent
+from agents.package_manager           import PackageManagerAgent
+from agents.firewall                  import FirewallAgent
+from agents.log_analyst               import LogAnalystAgent
+
+# ── Phase 2: RAG Memory ──────────────────────────
+from memory.vector_store              import VectorStore
+from memory.embedder                  import Embedder
+from memory.indexer                   import Indexer
+from memory.retriever                 import Retriever
+
+# ── Phase 3: A2A Protocol ────────────────────────
+from core.message_bus                 import MessageBus
+
+# ── Phase 4: Scheduler & Alerts ──────────────────
+from scheduler                        import StackScheduler
+from alerts.webhook_alert             import WebhookAlert
 
 # ── Server ──────────────────────────────────────
 import server as srv
@@ -69,7 +90,11 @@ BANNER = """
 ║  Pillar III: Agentic Orchestration (PRA Loop / LangGraph)   ║
 ║  Pillar IV : Local Inference (Gemini 2.0 Flash / Quantized) ║
 ╠══════════════════════════════════════════════════════════════╣
-║  Agents: Supervisor | Security | Network | SysAdmin | PLead ║
+║  Agents: [9] Supervisor|Security|Network|SysAdmin|PLead     ║
+║          GPU/Thermal|PackageMgr|Firewall|LogAnalyst          ║
+║  Phase 2: RAG Memory (ChromaDB + Gemini Embeddings)         ║
+║  Phase 3: A2A Inter-Agent Protocol                          ║
+║  Phase 4: Autonomous Scheduler + Discord Alerts             ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -88,46 +113,58 @@ def load_config() -> dict:
 
 
 def build_stack(config: dict):
-    """Construct all components of the Open Claw Stack."""
+    """Construct all components of the Open Claw Stack v2.0."""
 
-    logger.info("🔧 Initializing SharedState...")
+    logger.info("[1/6] Initializing SharedState...")
     state = SharedState()
-    state.add_message("system", "🚀 Open Claw Stack initializing...", "system")
+    state.add_message("system", "Open Claw Stack v2.0 initializing...", "system")
 
-    logger.info("🛡️  Loading Execwall policy...")
+    logger.info("[2/6] Loading Execwall policy...")
     execwall = Execwall(policy_path=ROOT / "policy.yaml", state=state)
 
-    logger.info("🧠 Connecting to Gemini LLM...")
+    logger.info("[3/6] Connecting to Gemini LLM...")
     llm_cfg = config.get("llm", {})
     llm = LLMClient(model=llm_cfg.get("model", "gemini-2.0-flash"))
-    state.add_message(
-        "system",
-        f"🧠 LLM backend: {llm.backend.upper()} ({llm.model_name})",
-        "system",
-    )
+    state.add_message("system", f"LLM: {llm.backend.upper()} ({llm.model_name})", "system")
 
-    logger.info("🤖 Instantiating agents...")
-    net_agent     = NetworkEngineerAgent(state, execwall)
-    sec_agent     = SecurityAuditorAgent(state, execwall)
-    sys_agent     = SysAdminAgent(state, execwall)
-    product_agent = ProductLeadAgent(state, llm)
-
+    logger.info("[4/6] Instantiating all 9 agents...")
     agents = {
-        "network_engineer": net_agent,
-        "security_auditor": sec_agent,
-        "sysadmin":         sys_agent,
-        "product_lead":     product_agent,
+        # Original 5
+        "network_engineer": NetworkEngineerAgent(state, execwall),
+        "security_auditor": SecurityAuditorAgent(state, execwall),
+        "sysadmin":         SysAdminAgent(state, execwall),
+        "product_lead":     ProductLeadAgent(state, llm),
+        # Phase 1: New agents
+        "gpu_thermal":      GPUThermalAgent(state, execwall),
+        "package_manager":  PackageManagerAgent(state, execwall),
+        "firewall":         FirewallAgent(state, execwall),
+        "log_analyst":      LogAnalystAgent(state, execwall),
     }
-
     supervisor = SupervisorAgent(state, llm, execwall, agents)
 
-    state.add_message(
-        "system",
-        "✅ All systems online. Open Claw Stack ready for tasks.",
-        "system",
-    )
-    logger.info("✅ Stack initialized — all 5 agents ready")
-    return state, execwall, supervisor
+    logger.info("[5/6] Initializing RAG Memory system...")
+    rag_store     = VectorStore()
+    rag_embedder  = Embedder()
+    rag_indexer   = Indexer(rag_store, rag_embedder)
+    rag_retriever = Retriever(rag_store, rag_embedder)
+    # Attach retriever to supervisor for context augmentation
+    supervisor.retriever = rag_retriever
+    supervisor.indexer   = rag_indexer
+    rag_status = rag_store.status()
+    state.add_message("system",
+        f"RAG Memory: {'active' if rag_status['available'] else 'offline (install chromadb)'} | "
+        f"Backend: {rag_embedder.backend}", "system")
+
+    logger.info("[6/6] Initializing A2A Message Bus...")
+    bus = MessageBus(state=state)
+    for name in agents:
+        bus.register(name)
+    bus.register("supervisor")
+    supervisor.message_bus = bus
+
+    state.add_message("system", "All 9 agents online. Open Claw Stack v2.0 ready.", "system")
+    logger.info("Stack initialized — 9 agents, RAG memory, A2A bus ready")
+    return state, execwall, supervisor, rag_indexer, bus
 
 
 def run_server_thread(host: str, port: int):
@@ -145,10 +182,11 @@ def run_server_thread(host: str, port: int):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Open Claw Stack — Sovereign AI System")
-    parser.add_argument("--task",       type=str, default=None, help="Run a one-shot task")
-    parser.add_argument("--no-browser", action="store_true",    help="Skip opening browser")
-    parser.add_argument("--port",       type=int, default=8765, help="Dashboard port")
+    parser = argparse.ArgumentParser(description="Open Claw Stack v2.0 — Sovereign AI System")
+    parser.add_argument("--task",        type=str,  default=None,  help="Run a one-shot task")
+    parser.add_argument("--no-browser",  action="store_true",       help="Skip opening browser")
+    parser.add_argument("--no-schedule", action="store_true",       help="Disable autonomous scheduler")
+    parser.add_argument("--port",        type=int,  default=8765,   help="Dashboard port")
     args = parser.parse_args()
 
     print(BANNER)
@@ -161,23 +199,41 @@ def main():
     url    = f"http://{host}:{port}"
 
     # Build stack
-    state, execwall, supervisor = build_stack(config)
+    state, execwall, supervisor, indexer, bus = build_stack(config)
 
     # Inject into server module
     srv.shared_state = state
     srv.execwall     = execwall
     srv.supervisor   = supervisor
+    srv.message_bus  = bus
 
     # Start server in background thread
-    logger.info(f"🌐 Starting dashboard server at {url}")
+    logger.info(f"Starting dashboard server at {url}")
     t = threading.Thread(target=run_server_thread, args=(host, port), daemon=True)
     t.start()
     time.sleep(1.5)   # Let server warm up
 
-    print(f"\n  🌐 Dashboard: {url}")
-    print(f"  📡 WebSocket: ws://{host}:{port}/ws")
-    print(f"  🛡️  Execwall:  {len(execwall._allow)} allow rules, {len(execwall._deny)} deny rules")
-    print(f"  🧠 LLM:       {supervisor.llm.backend.upper()} ({supervisor.llm.model_name})")
+    # Initialize webhooks
+    alert = WebhookAlert()
+    if alert.configured:
+        logger.info("Webhook alerts: active")
+        alert.alert_info("Open Claw Stack v2.0", "Stack started successfully — all 9 agents online.", "system")
+
+    # Autonomous scheduler
+    scheduler_active = False
+    if not args.no_schedule:
+        sched = StackScheduler(supervisor, state, alert)
+        if sched.start():
+            scheduler_active = True
+            logger.info("Scheduler: 4 jobs active (15m/1h/6h/daily)")
+
+    print(f"\n  Dashboard  : {url}")
+    print(f"  WebSocket  : ws://{host}:{port}/ws")
+    print(f"  Agents     : 9 active")
+    print(f"  Execwall   : {len(execwall._allow)} allow / {len(execwall._deny)} deny")
+    print(f"  LLM        : {supervisor.llm.backend.upper()} ({supervisor.llm.model_name})")
+    print(f"  Scheduler  : {'active (15m/1h/6h/daily)' if scheduler_active else 'disabled'}")
+    print(f"  Alerts     : {'Discord/Slack active' if alert.configured else 'not configured (set DISCORD_WEBHOOK_URL in .env)'}")
     print()
 
     # Auto-open browser
