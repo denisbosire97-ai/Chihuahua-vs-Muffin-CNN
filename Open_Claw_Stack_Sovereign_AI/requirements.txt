@@ -1,3 +1,4 @@
+# ── Core Stack ────────────────────────
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 websockets>=12.0
@@ -6,3 +7,13 @@ psutil>=5.9.0
 pyyaml>=6.0
 python-dotenv>=1.0.0
 requests>=2.31.0
+
+# ── Phase 1: New Agents ───────────────
+pynvml>=11.5.0          # GPU thermal monitoring (NVIDIA)
+pip-audit>=2.7.0        # Package CVE vulnerability scanning
+
+# ── Phase 2: RAG Memory ───────────────
+chromadb>=0.5.0         # Local vector database (no cloud)
+
+# ── Phase 4: Scheduler & Alerts ───────
+apscheduler>=3.11.0     # Background task scheduling
